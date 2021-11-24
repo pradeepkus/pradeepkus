@@ -1,412 +1,378 @@
-; This is the programe for tracking of cyclones from spatical maps of the data 
+; ------------------------------------------
+; Script     : Traking _Softwere.ncl
+; Updated on : 12 Sep, 2020 8:47:49 PM 
+; Author     : Pradeep and Chetan
+; ------------------------------------------
+; Description:
+;   Purpose of the script follows.
+; ------------------------------------------
+; This is the programe is the implimentation of cyclone tracking scheme from following study.
+ 
+;1) Surface cyclones in the ERA40 data set (1958–2001). Part 1: Novel identification method and global climatology.J. from  for tracking of cyclones from spatical maps of the data
+;    Wernli H, Schwierz C. (2006)
+;2) Objective identification and tracking of multicentre cyclones in the ERA-Interim reanalysis dataset (Hanley, John Caballero, Rodrigo, 2012).
+;
+;3)use in ""Objective climatology of cyclones in the
+;Mediterranean region: a consensus view among
+;methods with different system identification and
+;tracking criteria"
+;
 ; This is writtern by Pradeep Kushwaha From Indian Institute of Science under his PHD
-
+; Hugly benifited by efficint looping method impliment by Cheten kumar
 
 begin 
-DataPath         = "/home/pradeep/Desktop/MTC_PAPER1/DATA_DERIVED/" 
+DataPath         = "/home/pradeep/Desktop/MTC_PAPER2/AUTOMATIC_TRACKING_DATA/" 
 ;========================================================================
 ;                  call for the detection data from detection method
 ;========================================================================
 
-CENTERS_DATA     =  addfile(DataPath+"MD_TC_NEW_COMPOSITS_QTWHUV.nc","r")
-VOR_MD           =  CENTERS_DATA->VOR_COM
-H_MD             =  CENTERS_DATA->H_COM
-Q_MD             =  CENTERS_DATA->Q_COM
-U_MD             =  CENTERS_DATA->U_COM
-V_MD             =  CENTERS_DATA->V_COM
-VOM_MD           =  CENTERS_DATA->VOR_RECORD(1,:)
-VOL_MD           =  CENTERS_DATA->VOR_RECORD(0,:)
-VOU_MD           =  CENTERS_DATA->VOR_RECORD(2,:)
-QM_MD            =  CENTERS_DATA->Q_RECORD     
-lon_md           =  CENTERS_DATA->lon
-lat_md           =  CENTERS_DATA->lat
-lev_md           =  CENTERS_DATA->lev
-time_MD          =  CENTERS_DATA->time
-LAT_RECORD       =  CENTERS_DATA->LAT_RECORD 
-LON_RECORD       =  CENTERS_DATA->LON_RECORD
-minima_MD        =  CENTERS_DATA->minima
-TIME_RECORD      =  CENTERS_DATA->TIME_RECORD
-NUMBER_MIN       =  CENTERS_DATA->NUM_MIN 
+CENTERS_DATA      =  addfile(DataPath+"CYCLONE_CENTERS_ALL_1998_2019.nc","r")
+
+VOM_MD            =  CENTERS_DATA->VOR_RECORD(1,:)
+VOL_MD            =  CENTERS_DATA->VOR_RECORD(0,:)
+VOU_MD            =  CENTERS_DATA->VOR_RECORD(2,:)
+QM_MD             =  CENTERS_DATA->Q_RECORD     
+lon_md            =  CENTERS_DATA->lon
+lat_md            =  CENTERS_DATA->lat
+lev_md            =  CENTERS_DATA->lev
+time_MD           =  CENTERS_DATA->time
+LAT_RECORD        =  CENTERS_DATA->LAT_RECORD 
+LON_RECORD        =  CENTERS_DATA->LON_RECORD
+minima_MD         =  CENTERS_DATA->NUM_MIN
+TIME_RECORD       =  CENTERS_DATA->TIME_RECORD
+NUMBER_MIN        =  doubletoint( CENTERS_DATA->NUM_MIN  )
+LEV_VMAX_RECO     =  CENTERS_DATA->LEV_VMAX_RECO
+DIFF_MD           = VOM_MD-VOL_MD
+print(cd_calendar(time_MD,3))
+;===========================loop for saperate years====================
+dates1 = (/1998060100,1999060100,2000060100,2001060100,2002060100,2003060100,2004060100,2005060100,2006060100,2007060100,2008060100,2009060100,2010060100,2011060100,2012060100,2013060100,2014060100,2015060100,2016060100,2017060100,2018060100,2019060100/)
+
+dates2 = (/1998061018,1999093018,2000093018,2001093018,2002093018,2003093018,2004093018,2005093018,2006093018,2007093018,2008093018,2009093018,2010093018,2011093018,2012093018,2013093018,2014093018,2015093018,2016093018,2017093018,2018093018,2019093018/)
+;======================================================================
+
+;===========================loop for saperate years====================
+;dates1 = (/1998060100,1998060400,1998060412/)
+;dates2 = (/1998060318,1998060406,1998060418/)
+;======================================================================
+do dd = 0,0;dimsizes(dates1)-1
+
+;=================loop for every year===================================
+TIME_yyyymmddhh    = cd_calendar(time_MD,3)
+LOOP_END_INDEX1    = ind(TIME_yyyymmddhh.eq.dates1(dd))
+LOOP_END_INDEX2    = ind(TIME_yyyymmddhh.eq.dates2(dd))
+;=======================================================================
 
 
-INDEX_FILTER     = ind(VOM_MD.gt.-100)
+;***************************************************
+;           Temp stores trajectories
+;           Added by Chetankumar Jalihal 
+;           Upgraded by Pradeep Kushwaha 
+;***************************************************
 
-LAT_RECORD_MD    = LAT_RECORD(INDEX_FILTER)
-LON_RECORD_MD    = LON_RECORD(INDEX_FILTER)
-TIME_RECORD_MD   = TIME_RECORD(INDEX_FILTER)
-;============================================================================
-;                   DEFINE VARIABLES TO STORE THE TREJECTORIES 
-;============================================================================
+Temp           = new( (/dimsizes(LAT_RECORD), 9/), double)
 
-MAX_NUM_TREJ    = 500
+TREJ           = new( (/dimsizes(LAT_RECORD), 9, 300/), double)
 
-MAX_LENGTH_TEJ  = 100
+cy_index       = 0      ;Trejectory index
+counter        = 0
+Day_counter    = 0
+Damping        = 1
+npts           = 2
+dist_threshold = 500   ; distance threshold
+vor_threshold  = 5   ; Only defined, but not used
 
-LAT_TRJ         = new((/MAX_NUM_TREJ,MAX_LENGTH_TEJ/),"float")
+;study_period   = LOOP_END_INDEX;dimsizes( time_MD )       ; total number of days in the study
+;print(study_period)
+;return
+do  i = LOOP_END_INDEX1,  LOOP_END_INDEX2                ; stop 11 days before the end of study period
+;print(i)
+    no_current_cy =  NUMBER_MIN(i)        ; No. of minima in the current day
 
-LON_TRJ         = new((/MAX_NUM_TREJ,MAX_LENGTH_TEJ/),"float")
+    do j = 0, no_current_cy-1             ; for each minima do the following
 
-VORM_TRJ        = new((/MAX_NUM_TREJ,MAX_LENGTH_TEJ/),"float")
+            if (i.eq.LOOP_END_INDEX1)
+                no_previous_cy := 0
+            else
+                no_previous_cy := sum( NUMBER_MIN(LOOP_END_INDEX1:i-1) )
+            end if
 
-VORL_TRJ        = new((/MAX_NUM_TREJ,MAX_LENGTH_TEJ/),"float")
+           if VOM_MD(no_current_cy+j).gt.1.0 then ; consider a minima only if its vorticity is larger then 1.5
+            ; Consider a minima
+            Temp_time        = cd_calendar(TIME_RECORD( no_previous_cy + j), 3 )
+            Temp_date        = TIME_RECORD( no_previous_cy + j)
+            Temp_lat         = LAT_RECORD( no_previous_cy + j )
+            Temp_lon         = LON_RECORD( no_previous_cy + j )
+            Temp_diff        = DIFF_MD(no_previous_cy + j)
+            Temp_humidity    = QM_MD(no_previous_cy + j) 
+            Temp_vom         = VOM_MD(no_previous_cy+j)    
+            Temp_si_lev      = LEV_VMAX_RECO(no_previous_cy+j)       
 
-VOR_DIFF_TRJ    = new((/MAX_NUM_TREJ,MAX_LENGTH_TEJ/),"float")
+         print_clock(" WORKING ON "+Temp_time+" "+LOOP_END_INDEX1+" "+LOOP_END_INDEX2+" ")
+            else
+              continue
+            end if   
+            
+            ; if the trajectory was identified previously (associated with another trajectory) then go to next cyclone
+           
+            if any(  (Temp_time.eq.Temp(:,1)) .and. (Temp_lat.eq.Temp(:,2)) .and. (Temp_lon.eq.Temp(:,3)) )
+              
+                continue
+              
+            end if
+            
+              ;---------------------------------------------------------
+              ; if any trejectory start at 30 sep stop it 
+                   TIMEI     = cd_calendar(Temp_date, 0)         
+                   yearI    = toint( TIMEI(:,0) )
+                   monthI   = toint( TIMEI(:,1) )
+                   dayI     = toint( TIMEI(:,2) ) 
+                       
+                   if (monthI.eq.9).and.(dayI.eq.30) then
+                      continue   
+                   end if   
+               ;----------------------------------------------------------
+                           
+               ; New trajectory
+               
+                cy_index     = cy_index + 1
 
- IND_TRJ        = new(MAX_NUM_TREJ,"integer")
-
- IND_TRJ0       = new(1,float)
-;=============================================================================
-;                   EXTRACT PER DAY CYCLONIC CENTERS
-;=============================================================================
-TIMEIN   =  30
-NMIN     = toint(NUMBER_MIN)
-NCSUM    = cumsum(NMIN,2)  
-;----------------------------------------------------------------------------
-;NMIN is the variable which stores the number of detected centers per step
-; 1 june 2014 we have 13 min and so on..
-;---------------------------------------------------------------------------
-do T = 0,500; dimsizes(NMIN)-2
-
-;----------------------------------------------------------------------------
-; In this step we are extracting sets of minimum during two analysis time steps
-; cumulaive sum provides the indexs for next dates in the lat lon indexes.
-;----------------------------------------------------------------------------
-;if T.EQ.0 then
-;----------------------------------------------------------------------------
-;                      Initliz the trejectories------------------------------
-;LAT_STEP1  = LAT_RECORD_MD(0:NMIN(0))  
-;LON_STEP1  = LON_RECORD_MD(0:NMIN(0))
-;---------------------------------------------------------------------------
-;print(NMIN(0))
-;**************************************************************************
-  if T.eq.0 then 
-      IND_ST_STEP1    = 0
-      IND_EN_STEP1    = NMIN(0)-1
-
-      IND_ST_STEP2     = cumsum(NCSUM(T),2)
-      IND_EN_STEP2     = cumsum(NCSUM(T+1),2)-1
-;;--------------------------------------------------------------------
-   LAT_STEP1          = LAT_RECORD_MD(IND_ST_STEP1:IND_EN_STEP1)  
-   LON_STEP1          = LON_RECORD_MD(IND_ST_STEP1:IND_EN_STEP1)  
-;----------------------------------------------------------------------
-   LAT_STEP2          = LAT_RECORD_MD(IND_ST_STEP2:IND_EN_STEP2)  
-   LON_STEP2          = LON_RECORD_MD(IND_ST_STEP2:IND_EN_STEP2)
-
-
-   TIME_STEP1         = TIME_RECORD_MD(IND_ST_STEP1:IND_EN_STEP1)
-   TIME_STEP2         = TIME_RECORD_MD(IND_ST_STEP2:IND_EN_STEP2)
-
-   VOR_STEP1          =  VOM_MD(IND_ST_STEP1:IND_EN_STEP1)  
-   VOR_STEP2          =  VOM_MD(IND_ST_STEP2:IND_EN_STEP2)  
-
-;print(""+LAT_STEP1+"  " +   "  "+LON_STEP1+"    "+cd_calendar(TIME_RECORD_MD(IND_ST_STEP1:IND_EN_STEP1),2)+"")
-
-;print(""+LAT_STEP2+"  " +   "  "+LON_STEP2+"    "+cd_calendar(TIME_RECORD_MD(IND_ST_STEP2:IND_EN_STEP2),2)+"")
-;print("end of T=0")
-;----------------------------------------------------------------------
-   else
-;--------------------------------------------------------------------
-     IND_ST_STEP1     = cumsum(NCSUM(T-1),2)
-     IND_EN_STEP1     = cumsum(NCSUM(T),2)-1
- 
-     IND_ST_STEP2     = cumsum(NCSUM(T),2)
-     IND_EN_STEP2     = cumsum(NCSUM(T+1),2)-1
-;;------------------------------------------------------------------
-     LAT_STEP1        = LAT_RECORD_MD(IND_ST_STEP1:IND_EN_STEP1)  
-     LON_STEP1        = LON_RECORD_MD(IND_ST_STEP1:IND_EN_STEP1)  
-
-     LAT_STEP2        = LAT_RECORD_MD(IND_ST_STEP2:IND_EN_STEP2)  
-     LON_STEP2        = LON_RECORD_MD(IND_ST_STEP2:IND_EN_STEP2)
-
-     TIME_STEP1       = TIME_RECORD_MD(IND_ST_STEP1:IND_EN_STEP1)
-     TIME_STEP2       = TIME_RECORD_MD(IND_ST_STEP2:IND_EN_STEP2)
-;print(""+LAT_STEP1+"  " +   "  "+LON_STEP1+"    "+cd_calendar(TIME_RECORD_MD(IND_ST_STEP1:IND_EN_STEP1),2)+"")
-
-;print(""+LAT_STEP2+"  " +   "  "+LON_STEP2+"    "+cd_calendar(TIME_RECORD_MD(IND_ST_STEP2:IND_EN_STEP2),2)+"")
-
-  ; VOR_STEP1          =  VOM_MD(IND_ST_STEP1:IND_EN_STEP1)  
-  ; VOR_STEP2          =  VOM_MD(IND_ST_STEP2:IND_EN_STEP2)  
-;----------------------------------------------------------------------
-   end if 
+                Temp(counter, 0) = cy_index
+                Temp(counter, 1) = Temp_time
+                Temp(counter, 2) = Temp_lat
+                Temp(counter, 3) = Temp_lon
+                Temp(counter, 4) = Temp_diff
+                Temp(counter, 5) = Temp_humidity
+                Temp(counter, 6) = Temp_vom
+                Temp(counter, 7) = Temp_si_lev
+                
+               ;----------------------------------------------- 
+               TREJ(cy_index-1, 0, 0)  = (/  cy_index       /) ; index of the track or track number
+               TREJ(cy_index-1, 1, 0)  = (/  cd_calendar(Temp_date,3)      /) ; time string of the track point
+               TREJ(cy_index-1, 2, 0)  = (/  Temp_lat       /) ; latitude of the center
+               TREJ(cy_index-1, 3, 0)  = (/  Temp_lon       /) ; longitude of center
+               TREJ(cy_index-1, 4, 0)  = (/  Temp_diff      /) ; middle - lower vorticity
+               TREJ(cy_index-1, 5, 0)  = (/  Temp_humidity  /) ; mean middle troposphere humidity
+               TREJ(cy_index-1, 6, 0)  = (/  Temp_vom       /) ; mean middle level vorticity
+               TREJ(cy_index-1, 7, 0)  = (/  Temp_si_lev    /) ; level of vorticity maximum 
+               TREJ(cy_index-1, 8, 0)  = (/    1            /) ; track length
+               ;------------------------------------------------
+                ; Track this minima for the NEXT 15 days
+                do k = 0, 60  ; Randomly chosen 15 days, because we know cyclones won't last so long
 
 
-;========================================================================================
+                    ; identify location of minima for all cyclones
+                    LAT_STEP2   := LAT_RECORD( sum(NUMBER_MIN(LOOP_END_INDEX1:(i+k))): sum(NUMBER_MIN(LOOP_END_INDEX1:(i+k+1)))-1 )
+                    LON_STEP2   := LON_RECORD( sum(NUMBER_MIN(LOOP_END_INDEX1:(i+k))): sum(NUMBER_MIN(LOOP_END_INDEX1:(i+k+1)))-1 )
+                    time_step2  := TIME_RECORD( sum(NUMBER_MIN(LOOP_END_INDEX1:(i+k))): sum(NUMBER_MIN(LOOP_END_INDEX1:(i+k+1)))-1 )
+                     vor_step2  := VOM_MD( sum(NUMBER_MIN(LOOP_END_INDEX1:(i+k))): sum(NUMBER_MIN(LOOP_END_INDEX1:(i+k+1)))-1 )
+                humidity_step2  := QM_MD( sum(NUMBER_MIN(LOOP_END_INDEX1:(i+k))): sum(NUMBER_MIN(LOOP_END_INDEX1:(i+k+1)))-1)
+                diff_md_step2   := DIFF_MD( sum(NUMBER_MIN(LOOP_END_INDEX1:(i+k))): sum(NUMBER_MIN(LOOP_END_INDEX1:(i+k+1)))-1)
+                si_p_max_step2  := LEV_VMAX_RECO(sum(NUMBER_MIN(LOOP_END_INDEX1:(i+k))): sum(NUMBER_MIN(LOOP_END_INDEX1:(i+k+1)))-1)
+                
+                
+                ; first gauss if initial point (k=0);
+                ;-------------------------------------------------------------------------------------------------
+                if k.eq.0 then
+                  Temp_lat_guess := Temp_lat 
+                  Temp_lon_guess := Temp_lon
+                 else  ; linear interpolation of first gauss from second point onwards:
+                  Temp_lat_guess := Temp_lat + Damping*(Temp(counter,2)-Temp(counter-1,2))
+                  Temp_lon_guess := Temp_lon + Damping*(Temp(counter,3)-Temp(counter-1,3))
+                end if 
+                 ;--------------------------------------------------------------------------------------------------
+                  if k.eq.0 then ; initial pridicted vorticity at first point
+                  
+                  Temp_vom_guess := Temp_vom ; 
 
-;                                      DISTENCE CALCULATION
-;-----------------------------------------------------------------------------------------
-;                           -DEFINE FEW CONSTENT FOR DISTENCE CALCULATION
+                 else            ; pridicted vorticity for track older the 24 hours  
+                 
+                  Temp_vom_guess := Temp_vom + 0.75*(Temp(counter,6)-Temp(counter-1,6)) ; for tracks older then one day take linear projection of vorticity
 
-DIST0   = 1000 
-npts    = 2
-;-----------------------------------------------------------------------------------------
-TF      = 0
-TNF     = 0
-track   = 0
-;-----------------------------------------------------------------------------------------
-;printVarSummary(TIME_RECORD_MD)
-;===============================INITILIZATION OF TRACKS====================================
+                 end if 
+                 
+                  ;-------------------------------------------------------------------------------------------------- 
+                 gcdist         := gc_latlon(Temp_lat_guess, Temp_lon_guess, LAT_STEP2, LON_STEP2, npts,4)
+                 min_index      := minind( gcdist ) 
+                 
+                  ; print(dimsizes(min_index))
+                  ;--------------------------------------------------------------------------------------------------
+                  ;  THIS IS A SUBROUTINE TO TO SELECT THE NEXT CYCLONE WHICH ARE CLOSE TO VORTICITY OF CURRENT CYCLONE
+                  ;---------------------------------------------------------------------------------------------------
+                 if dimsizes(min_index).gt.1 then
+                   
+                   min_index     :=  minind(abs(Temp_vom-vor_step2(min_index) ) )
+                   
+                 else 
+                   min_index     := min_index
 
-;----------------------------------NUM  MIN IN STEP 1-------------------------------------
-    TSTEP1_NMIN           = dimsizes(LAT_STEP1)
-;----------------------------------NUM  MIN IN STEP 2-------------------------------------
-    TSTEP2_NMIN           = dimsizes(LAT_STEP2)
+                 end if 
+                  ;---------------------------------------------------------------------------------------------------
+                 
+                 VOR_DT          := Temp_vom_guess-vor_step2(min_index) ; this is the minization of vorticity
+                 
+                  ;---------------------------------------------------------------------------------------------------  
+                  ; Minimum distance and vorticity intensity criteria
+                  ; only update this poin in track if it minimizes the coast function otherwise terminate it 
+                   VORTICITY_THRESHOLD = (abs(VOR_DT).lt.vor_threshold)
+                    if ((VORTICITY_THRESHOLD).and.(min(gcdist).le.dist_threshold).and.(vor_step2(min_index).gt.1.0) )
 
-    TRACK_LAT_STORE1      = new(dimsizes(LAT_STEP1),float)
-    TRACK_LON_STORE1      = new(dimsizes(LAT_STEP1),float)
-
-    TRACK_LAT_STORE2      = new(dimsizes(LAT_STEP1),float)
-    TRACK_LON_STORE2      = new(dimsizes(LAT_STEP1),float)
-
-
-    TRACK_INDEX_STORE1    = new(dimsizes(LAT_STEP1),float)
-    TRACK_INDEX_STORE2    = new(dimsizes(LAT_STEP1),float)
-  
-
-    TRACK_TIME_STORE1     = new(dimsizes(LAT_STEP1),double)
-    TRACK_TIME_STORE2     = new(dimsizes(LAT_STEP1),double)
-
-do NN = 0, TSTEP1_NMIN-1
-
-  if T .eq.0 then
-
-   
-;==================================================================================================
- 
-
-        gcdist              = gc_latlon(LAT_STEP1(NN), LON_STEP1(NN), LAT_STEP2, LON_STEP2, npts,4)
-;-------------------------------------------------------------------------------------------------
-;           calculate minimum distence candidate-for each initial point
-;--------------------------------------------------------------------------------------------------
-        DISTMIN             = min(gcdist)
-        IND_MIN             = ind(gcdist.eq.DISTMIN)
-
-        LAT_NEX             = LAT_STEP2(IND_MIN)
-        LON_NEX             = LON_STEP2(IND_MIN)
- 
-
-        LAT_CUR             = LAT_STEP1(NN)
-        LON_CUR             = LON_STEP1(NN) 
-
-        TIME_CUR            = TIME_STEP1(NN)
-        TIME_NEX            = TIME_STEP2(IND_MIN(0))  ; (********************************NEED TO DEAL WITH IT*********************************) 
-;--------------------                                 ---filtering out systems with minimum distence critaria----------------------------------
-       if DISTMIN.lt.DIST0 then
-
-        TF     = TF+1
-
-        TNF    = TNF+1
-
-        TRACK_LAT_STORE1(track)   = tofloat(LAT_CUR)
-        TRACK_LON_STORE1(track)   = tofloat(LON_CUR)
-
-        TRACK_LAT_STORE2(track)   = tofloat(LAT_NEX)
-        TRACK_LON_STORE2(track)   = tofloat(LON_NEX)
+                    ; MINIMA MUST OF AT MINIMUM DISTENCE
+                    ; MINIMA MUST OF OF SIMILAR INTENSITY (VOR*-VOR2<SI0)
+                    ; AND MINIMA MUST BE ATLEST GREATER THEN 1 S-1     
 
 
-        TRACK_INDEX_STORE1(track) = toint(NN)
-        TRACK_INDEX_STORE2(track) = toint(IND_MIN(0))
+                           
+                     ;------------------------------------------------------------------------------------------------
+                     ;                        Adding a small number for interpolation if cyclone is stationary
+                     ;------------------------------------------------------------------------------------------------
+                 
+                         if (LAT_STEP2(min_index).eq.Temp(counter, 2)) then 
+                         
+                           LAT_STEP2(min_index) =  (LAT_STEP2(min_index))  ; spline works for different ponts
+                           
+                         end if 
+                 
+                 
+                         if (LON_STEP2(min_index).eq.Temp(counter, 3)) then
+                          
+                           LON_STEP2(min_index) = (LON_STEP2(min_index))
+                           
+                         end if 
+                     ;---------------------------------end small number addition-----------------------------------------
+                           
+                            Temp_lat            = (/LAT_STEP2(min_index)/)
+                            Temp_lon            = (/LON_STEP2(min_index)/)
+                            Temp_time           = (/cd_calendar( time_step2(min_index), 3)/)
+                            Temp_date           = (/time_step2(min_index)/)
+                            Temp_vom            = (/vor_step2(min_index)/)
+                            Temp_vordiff        = (/diff_md_step2(min_index)/)
+                            humidity_step2      = (/humidity_step2(min_index)/)
+                            si_p_max_step2      = (/si_p_max_step2(min_index)/)
+                      ; If it was previously tracked (associated with another minima) then move to next day
+                      ;---------------------------------------------------------------------------------------------------   
+                          if any(  (Temp_time.eq.Temp(:,1)) .and. (Temp_lat.eq.Temp(:,2)) .and. (Temp_lon.eq.Temp(:,3)) )
+                                    break
+                          end if
+                       ;--------------------------------------------------------------------------------------------------
+                            counter   = counter + 1 ; if minima minizes the coast function then update the trejectory
+
+               TREJ(cy_index-1, 0, k+1)  = (/  cy_index                 /) ; index of the track or track number
+               TREJ(cy_index-1, 1, k+1)  = (/  cd_calendar(time_step2(min_index), 3)   /) ; time string of the track point
+               TREJ(cy_index-1, 2, k+1)  = (/ LAT_STEP2(min_index)      /) ; latitude of the center
+               TREJ(cy_index-1, 3, k+1)  = (/ LON_STEP2(min_index)      /) ; longitude of center
+               TREJ(cy_index-1, 4, k+1)  = (/ diff_md_step2(min_index)  /); middle - lower vorticity
+               TREJ(cy_index-1, 5, k+1)  = (/ vor_step2(min_index)      /); mean middle troposphere humidity
+               TREJ(cy_index-1, 6, k+1)  = (/ humidity_step2(min_index) /) ; mean middle level vorticity
+               TREJ(cy_index-1, 7, k+1)  = (/ si_p_max_step2(min_index) /) ; level of vorticity maximum 
+               TREJ(cy_index-1, 8, 0)    = (/    k+2                    /) ; track length
+;---------------------------------------------------------------------------------------------------
+                            Temp(counter, 0) = cy_index
+                            Temp(counter, 1) = (/cd_calendar( time_step2(min_index), 3)/)
+                            Temp(counter, 2) = (/LAT_STEP2(min_index)      /)
+                            Temp(counter, 3) = (/LON_STEP2(min_index)      /)
+                            Temp(counter, 4) = (/diff_md_step2(min_index)  /)
+                            Temp(counter, 5) = (/vor_step2(min_index)      /)
+                            Temp(counter, 6) = (/humidity_step2(min_index) /)
+                            Temp(counter, 7) = (/si_p_max_step2(min_index) /)
+                            Temp(counter, 8) = (/    k+2                   /)
+                    else
+                         counter = counter + 1  ; update new track point position if new trejectory 
+
+                         break                  ; if coast function not minimum then stop the track 
+                         
+                    end if                      ; end of coast function loop 
+                    
+                    
+           ;break if this is the last day of september
+           
+                   TIME    = cd_calendar(Temp_date, 0)         
+                   year    = toint( TIME(:,0) )
+                   month   = toint( TIME(:,1) )
+                   day     = toint( TIME(:,2) ) 
+                       
+                   if (month.eq.10).and.(day.eq.30) then
+                     break 
+                   end if 
+            
+                 end do                         ; end of perticulat track update  
 
 
-        TRACK_TIME_STORE1(track) = TIME_CUR
-        TRACK_TIME_STORE2(track) = TIME_NEX
-
-
-
-
-
-;print(""+NN+"  "  +  "  "+IND_MIN+"")
-
-       ;  print(DISTMIN.lt.DIST0)
-      else
     
-        TRACK_LAT_STORE1(track)   = 1000 ; TRACK_LAT_STORE1@_FillValue
-        TRACK_LON_STORE1(track)   = 1000 ; TRACK_LAT_STORE1@_FillValue
-
-
-        TRACK_LAT_STORE2(track)   = 1000;  TRACK_LAT_STORE1@_FillValue ; CUR : CURRENT
-        TRACK_LON_STORE2(track)   = 1000; TRACK_LAT_STORE1@_FillValue
-
-
-        TRACK_INDEX_STORE1(track) = 1000; TRACK_LAT_STORE1@_FillValue
-        TRACK_INDEX_STORE2(track) = 1000; TRACK_LAT_STORE1@_FillValue
-
-
-        TRACK_TIME_STORE1(track) =  TIME_CUR
-        TRACK_TIME_STORE2(track) =  TIME_NEX
-
-
-
-        NGEN_POINTS   =  TSTEP2_NMIN-TF             ; NGEN ARE THE NEW GENSIS POINTS AT NEXT TIME STEP WHICH IS TOTAL =  (POINTS AT STEP2 - POINTS WHO GOT TRACK)
-
-      end if     
-
-        TRACK_FOUND   = TF
-        TRACK_NFOUND  = TNF 
-        TRACK_NLAT    = LAT_NEX 
-        TRACK_NLON    = LON_NEX
- 
+      
+    end do                                      ; end of each minimum track initlization if not included in other trejectories
     
-
-  track = track + 1                               ; increament of t 0 tracks
-
-;===========================================================================================================================================
-;                                                   strat for next time step grater the 0
-;===========================================================================================================================================
- else                                             ; start of T>0 condition  and  the end of T= 0 condition 
-
-        gcdist              = gc_latlon(LAT_STEP1(NN), LON_STEP1(NN), LAT_STEP2, LON_STEP2, npts,4)
-;-------------------------------------------------------------------------------------------------------------------------------------------
-;                                                   calculate minimum distence candidate-for each initial point
-;--------------------------------------------------------------------------------------------------------------------------------------------
-        DISTMIN             = min(gcdist)
-;--------------------------------------------------------------------------------------------------------------------------------------------
-
-
-        IND_MIN             = ind(gcdist.eq.DISTMIN)
-
-        LAT_NEX             = LAT_STEP2(IND_MIN(0))
-        LON_NEX             = LON_STEP2(IND_MIN(0))
-
   
-        LAT_CUR             = LAT_STEP1(NN)
-        LON_CUR             = LON_STEP1(NN) 
-
-        TIME_CUR            = TIME_STEP1(NN)
-        TIME_NEX            = TIME_STEP2(IND_MIN(0))
-;----------------------                          -filtering out systems with minimum distence critaria----------------------------------------
-       if DISTMIN.lt.DIST0 then
-
-        TF     = TF+1
-
-        TNF    = TNF+1
-
-        TRACK_LAT_STORE1(track)   = tofloat(LAT_CUR)
-        TRACK_LON_STORE1(track)   = tofloat(LON_CUR)
+end do                                        ; end of days loop 
 
 
-        TRACK_LAT_STORE2(track)   = tofloat(LAT_NEX)    ; CUR : CURRENT
-        TRACK_LON_STORE2(track)   = tofloat(LON_NEX)
+ basePath              =  "/home/pradeep/Desktop/MTC_PAPER2/AUTOMATIC_TRACKING_DATA/"
+  pathOut              =  basePath + "AUTOMATIC_TRACKING_TRACKS_TEST_"+dates1(dd)+"_"+dates2(dd)+".nc"
+  makeNewFile          =  True 
+   setfileoption("nc", "Format",  "NetCDF4Classic")
 
+ ;   setfileoption( "nc", "Format", "LargeFile" )
+    if( makeNewFile ) then
+    system( "rm " + pathOut )
+    fout  = addfile( pathOut, "c" )
 
-        TRACK_INDEX_STORE1(track) = toint(NN)
-        TRACK_INDEX_STORE2(track) = toint(IND_MIN(0))
+    ;===================================================================
+    ; create global attributes of the file (optional)
+    ;===================================================================
+       fAtt               = True            ; assign file attributes
+       fAtt@title         = "NCL Simple Approach to netCDF Creation 0=INDEX;1"
+       fAtt@source_file   =  "original-file.nc"
+       fAtt@Conventions   = "None"
+       fAtt@creation_date = systemfunc ("date")
+       fileattdef(fout , fAtt )            ; copy file attributes
 
+    ;===================================================================
+    ; make time an UNLIMITED dimension; recommended  for most applications
+    ;===================================================================
+     
+       filedimdef(fout,"LAT",-1,True)
   
-        TRACK_TIME_STORE1(track) = TIME_CUR
-        TRACK_TIME_STORE2(track) = TIME_NEX
-
-
-      else
- 
-        NGEN_POINTS   =  TSTEP2_NMIN-TF            ; NGEN ARE THE NEW GENSIS POINTS AT NEXT TIME STEP WHICH IS TOTAL =  (POINTS AT STEP2 - POINTS WHO GOT TRACK)
-
-
-        TRACK_LAT_STORE1(track)   =  TRACK_LAT_STORE1@_FillValue
-        TRACK_LON_STORE1(track)   =  TRACK_LAT_STORE1@_FillValue
-
-
-        TRACK_LAT_STORE2(track)   =  TRACK_LAT_STORE1@_FillValue ; CUR : CURRENT
-        TRACK_LON_STORE2(track)   =  TRACK_LAT_STORE1@_FillValue
-
-
-        TRACK_INDEX_STORE1(track) =  TRACK_LAT_STORE1@_FillValue
-        TRACK_INDEX_STORE2(track) =  TRACK_LAT_STORE1@_FillValue
-
-
-        TRACK_TIME_STORE1(track) =  TIME_CUR
-        TRACK_TIME_STORE2(track) =  TIME_NEX
-
-
-
-      end if     
-
-        TRACK_FOUND   = TF
-        TRACK_NFOUND  = TNF 
-        TRACK_NLAT    = LAT_NEX
-        TRACK_NLON    = LON_NEX
-
-
-       track = track + 1                            ; increament of non T>0 tracks-----------------------------------------
-end if                                               ; end of T condition as T=0  or T>0 ----------------------------------
-
-delete(IND_MIN)
-
-end do                                              ; end of number of assigining next candidate for maximim ar STEP1
-
-;===================================no track condition need to deal========================================================
-
-
-
-IND_TRACKS_STEP1          = ind(.not.ismissing(TRACK_INDEX_STORE1))  ;   INDEX CORROSPONDS TO PREVIOUS POINT 
-IND_TRACKS_STEP2          = ind(.not.ismissing(TRACK_INDEX_STORE2))  ;   INDEX CORROSPONGS TO CURRENT  POINT
-
-;print(TRACK_LAT_STORE2)
-;print(IND_TRACKS_STEP2)
-;print(TRACK_LAT_STORE2(IND_TRACKS_STEP2))
-;==================================STORING OF TREJECTORIES AFTER EACH TIME STEP=============================================
-if T.EQ.0 then 
-
-
-  INDEX_TREJ1               = toint(TRACK_INDEX_STORE1(IND_TRACKS_STEP1))
-  INDEX_TREJ2               = toint(TRACK_INDEX_STORE2(IND_TRACKS_STEP2))
-
-;============================================================================================================================
-;            LOOP CORROSPONDS TO TREJECTORY AT PRESENT TIME STEP
-;============================================================================================================================
-
-
-   ;-------------------------------------------------------------------------------------------------------------------------
-   ; LAT_TRJ(IND_TRJ(0:TRACK_FOUND),0)   = TRACK_LAT_STORE1(IND_TRACKS_STEP1) ;TRACK_LAT_STORE1(toint(INDEX_TREJ1(TREJ)))
-  ;  LON_TRJ(IND_TRJ(0:TRACK_FOUND),0)   = TRACK_LON_STORE1(IND_TRACKS_STEP1) ;TRACK_LON_STORE1(toint(INDEX_TREJ1(TREJ)))
-
-
-  ;  LAT_TRJ(IND_TRJ(0:TRACK_FOUND-1),1)   = TRACK_LAT_STORE2(IND_TRACKS_STEP2) ;TRACK_LAT_STORE2(toint(INDEX_TREJ2(TREJ)))
-  ;  LON_TRJ(IND_TRJ(0:TRACK_FOUND-1),1)   = TRACK_LAT_STORE2(IND_TRACKS_STEP2) ;TRACK_LON_STORE2(toint(INDEX_TREJ2(TREJ)))
-
-;----------------------------------------------------------------------------------------------------------------------------
-;print(""+TRACK_LAT_STORE1(IND_TRACKS_STEP1)+"  " +  "  "+TRACK_LON_STORE1(IND_TRACKS_STEP1)+"  "  +  "  "+TRACK_LAT_STORE2(IND_TRACKS_STEP2)+"  "   +  "  "+TRACK_LON_STORE2(IND_TRACKS_STEP2)+"")
-else
-;================================need to define trejectory indexes===========================================================
-INDEX_TREJ1               = toint(TRACK_INDEX_STORE1(IND_TRACKS_STEP1))
-INDEX_TREJ2               = toint(TRACK_INDEX_STORE2(IND_TRACKS_STEP2))
-end if 
-
-print(""+TRACK_LON_STORE1(IND_TRACKS_STEP1)+"  " +  "  "+TRACK_LON_STORE2(IND_TRACKS_STEP2)+"  "  +  "  "+cd_calendar(TRACK_TIME_STORE1(IND_TRACKS_STEP1),2)+"  ")
-; T+1 LAT1 IS MACHING WITH T LAT2 AND SO ON........
-
-;=============================================================================================================================
-delete(INDEX_TREJ1)
-delete(INDEX_TREJ2)
-delete(IND_TRACKS_STEP1)
-delete(IND_TRACKS_STEP2)
-delete(TRACK_LAT_STORE1)   ; delete the lat track array to define new track array for next time step
-delete(TRACK_LON_STORE1)   ; delete the lat track array to define new track array for next time step
-delete(TRACK_INDEX_STORE1)
-
-delete(TRACK_LAT_STORE2)   ; delete the lat track array to define new track array for next time step
-delete(TRACK_LON_STORE2)   ; delete the lat track array to define new track array for next time step
-delete(TRACK_INDEX_STORE2)
-delete(TRACK_TIME_STORE1)
-delete(TRACK_TIME_STORE2)
-;------------------------------------------------------------------------------------------------------------------
-delete(IND_ST_STEP1)
-delete(IND_EN_STEP1)
-delete(IND_ST_STEP2)
-delete(IND_EN_STEP2)
-
-delete(LAT_STEP1)
-delete(LON_STEP1)
-delete(LAT_STEP2)
-delete(LON_STEP2)
-delete(TIME_STEP1)
-delete(TIME_STEP2)
-delete(gcdist)
-
-end do
-
+;--------------------------------------------------------------------------
+   INDEX_ALL               =  TREJ(:,1,0)
+   INDEX_ALL@_FillValue    =  -999
+   delete( INDEX_ALL@_FillValue) ; this part is only to extract real values not missing
+   INDEX_FINAL_MISSING     = ind(INDEX_ALL.eq.-999) 
+   INDEX_FINAL             = INDEX_FINAL_MISSING(0)
+  TRACK_LENGTH0            = TREJ(0:INDEX_FINAL,8,0)
+  TRACK_IND24              = ind(TRACK_LENGTH0.ge.4) 
+   TRAJ_24H                = TREJ(TRACK_IND24,:,:)
+;-------------------------------------------------------------------------
+   fout->TREJ                     = TRAJ_24H(:,:,:)
+   fout->INDX_RECORD              = TRAJ_24H(:,0,:)
+   fout->TIME_RECORD              = TRAJ_24H(:,1,:)
+   fout->LAT_RECORD               = TRAJ_24H(:,2,:)
+   fout->LON_RECORD               = TRAJ_24H(:,3,:)
+   fout->DIFF_RECORD              = TRAJ_24H(:,4,:)
+   fout->VOM_RECORD               = TRAJ_24H(:,5,:)
+   fout->Q_RECORD                 = TRAJ_24H(:,6,:)
+   fout->PMAX_RECORD              = TRAJ_24H(:,7,:)
+   fout->TRACK_LENGTH             = TRAJ_24H(:,8,:)
+  else
+    fout  = addfile( pathOut, "w" )
+  end if
+;--------------------------------------------------------------------------
+print_clock("WRIGHTING OVER FOR ALL MINIMA" )
+;==========================================================================
+alist = [/Temp(:,0), Temp(:,1), Temp(:,2), Temp(:,3), Temp(:,4), Temp(:,5), Temp(:,6), Temp(:,7)/]
+write_table("Temp_file_2000_2004.txt", "w", alist, "%f%f%f%f%f%f%f%f%f")
+;print(TREJ(:,8,0))
+delete(TRAJ_24H)
+delete(TREJ)
+delete(Temp)
+delete(INDEX_FINAL_MISSING)
+delete(INDEX_FINAL)
+delete(TRACK_LENGTH0)
+delete(TRACK_IND24)
 
 
 print("JOB SUCCESS")
+
+
+end do 
 
 end
 ;==============================================================================
