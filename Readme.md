@@ -1,9 +1,1 @@
- 👋 Hi, I’m pradeep kushwaha 
-- 👀 I’m interested in many dynamical processes in the atmosphere, including Tropical Cyclones, Monsoon lows, Middle Troposphere Cyclones, Monsoons 
-- 🌱 I’m currently learning Advanced Machine Learning tools useful for weather and Climate applications, 
-- 💞️ I’m looking to collaborate on various Atmosphere modeling, tracking of cyclonic systems and machine Learning projects. 
-- 📫 Please contact me at: pkustech@gmail.com 
-<!---
-pradeepkus/pradeepkus is a ✨ special ✨ repository because its `README.md` (this file) appears on your GitHub profile.
-You can click the Preview link to take a look at your changes.
- 
+This repository contains a k-means clustering code that classifies 600 hPa geopotential height fields into distinct clusters based on the similarity of spatial patterns. It also includes the procedure for determining the optimal number of clusters using the Silhouette Coefficient and the Elbow Method. The methodology is based on the paper “Classification of Mid-Tropospheric Cyclones over the Arabian Sea” and can be adapted for similar atmospheric classification studies.
